@@ -1,0 +1,32 @@
+---
+title: "Tractography SR"
+author: "Meghan R. Forrest"
+format: html
+editor: visual
+---
+
+```{r setup}
+# load packages
+library(readxl, 
+        curl)
+
+# Read in deduplicated records
+
+dedup <- "https://raw.githubusercontent.com/meghanrforrest/sr_fod-dti-tractography/main/1_originaldata_a_dedup.xlsx"
+
+dedup_temp <- tempfile(fileext = ".xlsx")
+curl::curl_download(dedup, dedup_temp)
+
+dat_dedup <- read_excel(dedup_temp)
+
+  # Remove the temporary file
+rm(dedup, 
+   dedup_temp)
+
+# Read in records removed during title/abstract screening
+tiab <- "https://github.com/meghanrforrest/sr_fod-dti-tractography/main/1_originaldata_b_tiab-screening.xlsx"
+```
+
+```{r}
+
+```
