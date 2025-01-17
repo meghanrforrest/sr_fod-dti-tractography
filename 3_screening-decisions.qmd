@@ -1,0 +1,163 @@
+---
+title: "Tractography SR"
+author: "Meghan R. Forrest"
+format: html
+editor: visual
+---
+
+# Setup
+
+## Load packages
+
+```{r setup}
+# load packages
+library(readxl, 
+        curl, 
+        tidyverse)
+```
+
+## Read in data
+
+### Deduplicated records
+
+```{r dedup read in}
+# Read in deduplicated records
+
+obj_dedup <- "https://raw.githubusercontent.com/meghanrforrest/sr_fod-dti-tractography/main/1_originaldata_a_dedup.xlsx"
+
+dedup_temp <- tempfile(fileext = ".xlsx")
+curl::curl_download(obj_dedup, dedup_temp)
+
+dedup <- read_excel(dedup_temp)
+
+  # Remove the temporary file
+rm(obj_dedup, 
+   dedup_temp)
+```
+
+### Excluded during title/abstract screening
+
+```{r tiab read in}
+# Read in records removed during title/abstract screening
+obj_tiab <- "https://raw.githubusercontent.com/meghanrforrest/sr_fod-dti-tractography/main/1_originaldata_b_tiab-screening.xlsx"
+tiab_temp <- tempfile(fileext = ".xlsx")
+curl::curl_download(obj_tiab, tiab_temp)
+
+tiab <- read_excel(tiab_temp)
+
+  # Remove the temporary file
+rm(obj_tiab, 
+   tiab_temp)
+```
+
+### Excluded during full text screening
+
+```{r}
+# Read in records removed during title/abstract screening
+obj_ft <- "https://raw.githubusercontent.com/meghanrforrest/sr_fod-dti-tractography/main/1_originaldata_c_ft-screening.xlsx"
+ft_temp <- tempfile(fileext = ".xlsx")
+curl::curl_download(obj_ft, ft_temp)
+
+ft <- read_excel(ft_temp)
+
+  # Remove the temporary file
+rm(obj_ft, 
+   ft_temp)
+```
+
+
+```{r}
+# select relevant metadata from deduplicated records
+dat <- dedup |> 
+  dplyr::select(`#`,
+         `Primary title`,
+         `DOI`) |> 
+  dplyr::mutate(`recordid` = `#`)
+
+# select relevant variables from records excluded during title/abstract screening
+dat_tiab <- tiab |> 
+  dplyr::slice(-1) |> 
+
+  dplyr::select(`Article ID`) |> 
+  
+  dplyr::mutate(`recordid` = `Article ID`) |> 
+  
+  # new variable = tiab_inc (included at title/abstract)
+  # all records in this dataset were excluded during title/abstract screening
+  dplyr::mutate(
+    tiab_inc = 0)
+  
+  
+dat_ft <- ft |> 
+  dplyr::slice(-1) |> 
+  dplyr::mutate(ft_inc = 0) |> 
+  dplyr::select(`Article ID`, 
+                `ft_inc`, 
+                `Criteria for exclusion`,
+                `...10`, 
+                `...11`, 
+                `...12`, 
+                `...13`, 
+                `...14`) |> 
+  
+# Criteria for exclusion = Is the paper an original piece of research?  (Study format)
+# ...10 = Did patients undergo surgery for motor-eloquent lesions?
+# ...11 = Did the study use direct electrical stimulation of motor fibres?
+# ...12 = Did the study use intraoperative neuromonitoring of muscles?
+# ...13 = Did the study compare tractography and direct electrical stimulation points?
+# ...14 = Did the study report accuracy measures of tractography?
+  dplyr::mutate(`recordid` = `Article ID`, 
+                ft1 = `Criteria for exclusion`, # original research or duplicate
+                ft2 = `...10`,  # motor eloquent lesions
+                ft3 = `...11`,  # direct electrical stimulation of motor fibres
+                ft4 = `...12`, # intraoperative neuromonitoring
+                ft5 = `...13`, # tractography v. direct electrical stimulation points
+                ft6 = `...14`) |> # accuracy measures 
+  dplyr::select(-`Article ID`, 
+                -`Criteria for exclusion`, 
+                - `...10`,
+                - `...11`,
+                - `...12`,
+                - `...13`,
+                - `...14`) |> 
+  dplyr::mutate(
+    ft_ex_rsn = dplyr::case_when(
+      !is.na(ft6) & is.na(ft5) & is.na(ft4) & is.na(ft3) & is.na(ft2) & is.na(ft1)~ 6,
+      !is.na(ft6) & !is.na(ft5) & is.na(ft4) & is.na(ft3) & is.na(ft2) & is.na(ft1) ~ 5,
+      !is.na(ft6) & !is.na(ft5) & !is.na(ft4) & is.na(ft3) & is.na(ft2) & is.na(ft1) ~ 4,
+      !is.na(ft6) & !is.na(ft5) & !is.na(ft4) & !is.na(ft3) & is.na(ft2) & is.na(ft1) ~ 3,
+      !is.na(ft6) & !is.na(ft5) & !is.na(ft4) & !is.na(ft3) & !is.na(ft2) & is.na(ft1) ~ 2,
+      ft1 == "Duplicate" ~ 7, # duplicate
+      TRUE ~ 1
+    )
+  ) |> 
+  dplyr::select(recordid, 
+                ft_inc, 
+                ft_ex_rsn)
+  
+```
+
+```{r}
+dat_all <- dat |> 
+  dplyr::full_join(dat_tiab, by = "recordid") |> 
+  dplyr::full_join(dat_ft, by = "recordid") |> 
+  dplyr::select(recordid, 
+                `Primary title`, 
+                tiab_inc, 
+                ft_inc, 
+                ft_ex_rsn) |> 
+  dplyr::mutate(
+    tiab_inc = dplyr::case_when(
+      is.na(tiab_inc) ~ 1, 
+      TRUE ~ tiab_inc
+    ) 
+  ) |> 
+  dplyr::mutate(
+    ft_inc = dplyr::case_when(
+      tiab_inc == 1 & !is.na(ft_ex_rsn) ~ 1, 
+      tiab_inc == 1 & is.na(ft_ex_rsn) ~ 0, 
+      tiab_inc == 0 ~ NA
+    )
+  )
+```
+
